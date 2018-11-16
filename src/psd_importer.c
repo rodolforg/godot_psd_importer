@@ -38,13 +38,10 @@ static GDCALLINGCONV void * constructor(godot_object *p_instance, void *p_method
 	api->godot_string_new(&data->filename);
 	data->doc = NULL;
 
-api->godot_print_warning("oi!", __func__, __FILE__, __LINE__);
-
 	return data;
 }
 
 static GDCALLINGCONV void destructor(godot_object *p_instance, void *p_method_data, void *p_user_data) {
-api->godot_print_warning("bye 1...", __func__, __FILE__, __LINE__);
 	data_struct *data = (data_struct *) p_user_data;
 
 	api->godot_string_destroy(&data->filename);
@@ -53,7 +50,6 @@ api->godot_print_warning("bye 1...", __func__, __FILE__, __LINE__);
 		psd_document_free(data->doc);
 
 	api->godot_free(p_user_data);
-api->godot_print_warning("bye 2.", __func__, __FILE__, __LINE__);
 }
 
 static GDCALLINGCONV godot_variant file_load(godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args) {
@@ -61,10 +57,8 @@ static GDCALLINGCONV godot_variant file_load(godot_object *p_instance, void *p_m
 	data_struct * user_data = (data_struct *) p_user_data;
 	
 	bool success = false;
-	api->godot_print_warning("file_load", __func__, __FILE__, __LINE__);
+
 	if (p_num_args == 1) {
-		api->godot_print_warning("file_load 2", __func__, __FILE__, __LINE__);
-	
 		api->godot_string_destroy(&user_data->filename);
 		user_data->filename = api->godot_variant_as_string(p_args[0]);
 
@@ -115,16 +109,15 @@ static GDCALLINGCONV godot_variant get_layer_count(godot_object *p_instance, voi
 static GDCALLINGCONV godot_variant extract_psd(godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args) {
 	godot_variant ret;
 	data_struct * user_data = (data_struct *) p_user_data;
-	
+
 	if (!user_data || !user_data->doc || p_num_args != 1) {
 		api->godot_variant_new_bool(&ret, false);
 		return ret;
 	}
-api->godot_print_warning("1.", __func__, __FILE__, __LINE__);
+
 	bool success = false;
-	
+
 	if (api->godot_variant_get_type(p_args[0]) == GODOT_VARIANT_TYPE_STRING) {
-api->godot_print_warning("2.", __func__, __FILE__, __LINE__);
 		godot_string dir_str = api->godot_variant_as_string(p_args[0]);
 		godot_char_string cstr = api->godot_string_utf8(&dir_str);
 		const char * dir = api->godot_char_string_get_data(&cstr);
