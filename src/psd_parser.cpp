@@ -80,19 +80,16 @@ struct psd_document * psd_parser_parse(struct psd_parser * parser)
 {
 	if (parser == NULL || parser->parser == NULL) // !!
 		return NULL;
-api->godot_print_warning("1.", __func__, __FILE__, __LINE__);
 
 	Document * doc = parser->parser->parse(); // !!!
 	if (doc == NULL)
 		return NULL;
-api->godot_print_warning("2.", __func__, __FILE__, __LINE__);
 
 	struct psd_document * ret = (struct psd_document *) api->godot_alloc(sizeof(struct psd_document));
 	if (ret == NULL) {
 		delete doc;
 		return NULL;
 	}
-api->godot_print_warning("3.", __func__, __FILE__, __LINE__);
 
 	ret->doc = doc;
 	return ret;
