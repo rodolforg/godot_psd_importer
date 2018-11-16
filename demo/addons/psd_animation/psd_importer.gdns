@@ -1,0 +1,9 @@
+[gd_resource type="NativeScript" load_steps=2 format=2]
+
+[ext_resource path="res://addons/psd_animation/libpsd_importer.gdnlib" type="GDNativeLibrary" id=1]
+
+[resource]
+
+class_name = "PsdImporter"
+library = ExtResource( 1 )
+
