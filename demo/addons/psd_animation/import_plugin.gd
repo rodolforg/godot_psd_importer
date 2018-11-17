@@ -81,7 +81,9 @@ func import(source_file, save_path, options, r_platform_variants, r_gen_files):
 		print('animation: ', anim)
 		sprframes.add_animation(anim)
 		for frame in animations[anim]:
-			var filename = dir + '/' + anim + '/' + frame + '.png'
+			var filename = anim + '/' + frame + '.png'
+			if dir.length() > 0:
+				filename = dir + '/' + filename
 			var texture = load(filename)
 			sprframes.add_frame(anim, texture)
 #		print(ResourceSaver.get_recognized_extensions(sprframes))
