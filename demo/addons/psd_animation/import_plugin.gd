@@ -35,8 +35,14 @@ func get_import_options(preset):
 	match preset:
 		Presets.PRESET_DEFAULT:
 			return [{
-				"name": "just_extract_layers",
-				"default_value": false
+					"name": "just_extract_layers",
+					"default_value": false
+				},{
+					"name": "default_fps",
+					"default_value": 5,
+				},{
+					"name": "loop",
+					"default_value": true,
 				}]
 		_:
 			return []
@@ -80,6 +86,8 @@ func import(source_file, save_path, options, r_platform_variants, r_gen_files):
 	for anim in animations.keys():
 		print('animation: ', anim)
 		sprframes.add_animation(anim)
+		sprframes.set_animation_loop(anim, options.loop)
+		sprframes.set_animation_speed(anim, options.default_fps)
 		for frame in animations[anim]:
 			var filename = anim + '/' + frame + '.png'
 			if dir.length() > 0:
