@@ -30,3 +30,7 @@ demo/addons/psd_animation/bin/libpsdump.so: ${PSDDUMP_PATH}/src/Record.cpp ${PSD
 demo/addons/psd_animation/bin:
 	mkdir -f $@
 
+clean:
+	rm -f src/*.o
+	rm -f ${BIN_PATH}/*.so
+	rm -f ${BIN_PATH}/*.dll
