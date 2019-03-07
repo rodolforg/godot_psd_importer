@@ -26,17 +26,22 @@
 #include "psd_importer.h"
 #include <string.h>
 
-#include "psd_parser.h"
+#include "psd_document.h"
 
 typedef struct {
 	godot_string filename;
-	struct psd_document * doc;
+	psd_document * doc;
 } data_struct;
 
 static GDCALLINGCONV void * constructor(godot_object *p_instance, void *p_method_data) {
 	data_struct *data = api->godot_alloc(sizeof(data_struct));
 	api->godot_string_new(&data->filename);
-	data->doc = NULL;
+	data->doc = psd_document_new();
+	if (data->doc == NULL) {
+		api->godot_string_destroy(&data->filename);
+		api->godot_free(data);
+		return NULL;
+	}
 
 	return data;
 }
@@ -65,15 +70,14 @@ static GDCALLINGCONV godot_variant file_load(godot_object *p_instance, void *p_m
 		godot_char_string cstr = api->godot_string_utf8(&user_data->filename);
 		const char * filename = api->godot_char_string_get_data(&cstr);
 
-		struct psd_parser * parser = psd_parser_new(filename);
+		int ok = psd_document_load(user_data->doc, filename);
 		api->godot_char_string_destroy(&cstr);
 
-		if (parser) {
-			user_data->doc = psd_parser_parse(parser);
+		if (ok) {
+			ok = psd_document_parse(user_data->doc);
 		}
-		psd_parser_free(parser);
 
-		success = user_data->doc != NULL;
+		success = ok != 0;
 	}
 	
 	api->godot_variant_new_bool(&ret, success);
@@ -123,7 +127,7 @@ static GDCALLINGCONV godot_variant extract_psd(godot_object *p_instance, void *p
 		const char * dir = api->godot_char_string_get_data(&cstr);
 
 		success = true;
-		psd_document_save_layers(user_data->doc, dir);
+/*		psd_document_save_layers(user_data->doc, dir);*/
 
 		api->godot_char_string_destroy(&cstr);
 		api->godot_string_destroy(&dir_str);
@@ -132,36 +136,27 @@ static GDCALLINGCONV godot_variant extract_psd(godot_object *p_instance, void *p
 	return ret;
 }
 
+static int _check_sprite_levels(const psd_layer_record * layer, void * cb_data, int level) {
+	bool * ok = (bool*) cb_data;
+	if (level >= 2) {
+		*ok = false;
+		return 0;
+	}
+	if (level == 1 && psd_layer_is_group(layer)) {
+		*ok = false;
+		return 0;
+	}
+	return 1;
+}
+
 static bool _is_sprite_frames(struct psd_document * doc) {
 	if (doc == NULL)
 		return false;
 
 	bool success = true;
+	
+	psd_document_foreach_layer_level(doc, _check_sprite_levels, &success);
 
-	struct psd_record * record = psd_document_first_child(doc);
-	while (record) {
-		if (record->is_group) {
-			struct psd_layer_group * group = record->data.group;
-			struct psd_record * nested_record = psd_layer_group_first_child(group);
-			while (nested_record) {
-				if (nested_record->is_group) {
-					success = false;
-					psd_record_free(nested_record);
-					break;
-				}
-				struct psd_record * next_nested_record = psd_layer_group_next_child(group);
-				psd_record_free(nested_record);
-				nested_record = next_nested_record;
-			}
-			if (!success) {
-				psd_record_free(record);
-				break;
-			}
-		}
-		struct psd_record * next_record = psd_document_next_child(doc);
-		psd_record_free(record);
-		record = next_record;
-	}
 	return success;
 }
 
@@ -180,6 +175,138 @@ static GDCALLINGCONV godot_variant is_sprite_frames(godot_object *p_instance, vo
 	return ret;
 }
 
+struct sprite_anim_names {
+	godot_dictionary * dict;
+	const char * current_animation_name;
+	godot_array frame_info_array;
+};
+
+static void _push_animation_names(struct sprite_anim_names * sprite_anim_names) {
+	godot_string key_str;
+	api->godot_string_new(&key_str);
+	api->godot_string_parse_utf8(&key_str, sprite_anim_names->current_animation_name);
+
+	godot_variant key;
+	api->godot_variant_new_string(&key, &key_str);
+
+	godot_variant value;
+	api->godot_variant_new_array(&value, &sprite_anim_names->frame_info_array);
+
+	api->godot_dictionary_set(sprite_anim_names->dict, &key, &value);
+	api->godot_string_destroy(&key_str);
+	api->godot_array_destroy(&sprite_anim_names->frame_info_array);
+	api->godot_variant_destroy(&value);
+	api->godot_variant_destroy(&key);
+}
+
+static int _fetch_animation_frame_names(const psd_layer_record * layer, void * cb_data, int level) {
+	struct sprite_anim_names * sprite_anim_names = (struct sprite_anim_names*) cb_data;
+
+	if (level == 0) {
+		if (sprite_anim_names->current_animation_name != NULL) {
+			_push_animation_names(sprite_anim_names);
+			sprite_anim_names->current_animation_name = NULL;
+		}
+		if (psd_layer_is_group(layer)) {
+			sprite_anim_names->current_animation_name = psd_layer_name(layer);
+			api->godot_array_new(&sprite_anim_names->frame_info_array);
+		}
+	} else if (level == 1) {
+		godot_string string;
+		api->godot_string_new(&string);
+		api->godot_string_parse_utf8(&string, psd_layer_name(layer));
+		
+		godot_dictionary dict;
+		api->godot_dictionary_new(&dict);
+		
+		// name
+		
+		godot_string name_key_str;
+		api->godot_string_new(&name_key_str);
+		api->godot_string_parse_utf8(&name_key_str, "name");
+		godot_variant name_key;
+		api->godot_variant_new_string(&name_key, &name_key_str);
+		api->godot_string_destroy(&name_key_str);
+		
+		godot_string name_value_str;
+		api->godot_string_new(&name_value_str);
+		api->godot_string_parse_utf8(&name_value_str, psd_layer_name(layer));
+		godot_variant name_value;
+		api->godot_variant_new_string(&name_value, &name_value_str);
+		api->godot_string_destroy(&name_value_str);
+		
+		api->godot_dictionary_set(&dict, &name_key, &name_value);
+		api->godot_variant_destroy(&name_key);
+		api->godot_variant_destroy(&name_value);
+		
+		// width
+		
+		godot_string width_key_str;
+		api->godot_string_new(&width_key_str);
+		api->godot_string_parse_utf8(&width_key_str, "width");
+		godot_variant width_key;
+		api->godot_variant_new_string(&width_key, &width_key_str);
+		api->godot_string_destroy(&width_key_str);
+
+		godot_variant width_value;
+		int64_t width = psd_layer_width(layer);
+		api->godot_variant_new_int(&width_value, width);
+		
+		api->godot_dictionary_set(&dict, &width_key, &width_value);
+		api->godot_variant_destroy(&width_key);
+		api->godot_variant_destroy(&width_value);
+
+		// height
+		
+		godot_string height_key_str;
+		api->godot_string_new(&height_key_str);
+		api->godot_string_parse_utf8(&height_key_str, "height");
+		godot_variant height_key;
+		api->godot_variant_new_string(&height_key, &height_key_str);
+		api->godot_string_destroy(&height_key_str);
+		
+		godot_variant height_value;
+		int64_t height = psd_layer_height(layer);
+		api->godot_variant_new_int(&height_value, height);
+		
+		api->godot_dictionary_set(&dict, &height_key, &height_value);
+		api->godot_variant_destroy(&height_key);
+		api->godot_variant_destroy(&height_value);
+
+		// image buffer
+		
+		godot_string image_key_str;
+		api->godot_string_new(&image_key_str);
+		api->godot_string_parse_utf8(&image_key_str, "image buffer");
+		godot_variant image_key;
+		api->godot_variant_new_string(&image_key, &image_key_str);
+		api->godot_string_destroy(&image_key_str);
+		
+		godot_variant image_value;
+		godot_pool_byte_array image_buffer;
+		const char * image_data = psd_layer_image_data(layer);
+		int buffer_size = width * height * 4;
+		api->godot_pool_byte_array_new(&image_buffer);
+		for (int i = 0; i < buffer_size; i++)
+			api->godot_pool_byte_array_append(&image_buffer, image_data[i]);
+		api->godot_variant_new_pool_byte_array(&image_value, &image_buffer);
+		api->godot_pool_byte_array_destroy(&image_buffer);
+		
+		api->godot_dictionary_set(&dict, &image_key, &image_value);
+		api->godot_variant_destroy(&image_key);
+		api->godot_variant_destroy(&image_value);
+
+		// everything
+		godot_variant dict_var;
+		api->godot_variant_new_dictionary(&dict_var, &dict);
+		api->godot_array_append(&sprite_anim_names->frame_info_array, &dict_var);
+		api->godot_dictionary_destroy(&dict);
+		api->godot_variant_destroy(&dict_var);
+	} else
+		return 0;
+	return 1;
+}
+
 static bool _get_sprite_frame_names(struct psd_document * doc, godot_dictionary * dict) {
 	if (doc == NULL || dict == NULL)
 		return false;
@@ -191,59 +318,17 @@ static bool _get_sprite_frame_names(struct psd_document * doc, godot_dictionary 
 	
 	api->godot_dictionary_new(dict);
 	
-	struct psd_record * animation_record = psd_document_first_child(doc);
-	while (animation_record) {
-		
-		if (animation_record->is_group) {
-			struct psd_layer_group * group = animation_record->data.group;
-			struct psd_record * frame_record = psd_layer_group_first_child(group);
-			godot_pool_string_array array;
-			api->godot_pool_string_array_new(&array);
-			//api->godot_pool_string_array_resize(&array, psd_layer_group_children_count(group));
-			while (frame_record) {
-				godot_string string;
-				api->godot_string_new(&string);
-				api->godot_string_parse_utf8(&string, psd_record_name(frame_record));
-				api->godot_pool_string_array_push_back(&array, &string);
-				api->godot_string_destroy(&string);
+	struct sprite_anim_names sprite_anim_names;
+	sprite_anim_names.dict = dict;
+	sprite_anim_names.current_animation_name = NULL;
+	
+	psd_document_foreach_layer_level(doc, _fetch_animation_frame_names, &sprite_anim_names);
+	if (sprite_anim_names.current_animation_name != NULL)
+		_push_animation_names(&sprite_anim_names);
 
-				struct psd_record * next_frame_record = psd_layer_group_next_child(group);
-				psd_record_free(frame_record);
-				if (!success)
-					break;
-				frame_record = next_frame_record;
-			}
-
-			if (!success) {
-				api->godot_pool_string_array_destroy(&array);
-				psd_record_free(animation_record);
-				break;
-			}
-
-			godot_string key_str;
-			api->godot_string_new(&key_str);
-			api->godot_string_parse_utf8(&key_str, psd_record_name(animation_record));
-
-			godot_variant key;
-			api->godot_variant_new_string(&key, &key_str);
-
-			godot_variant value;
-			api->godot_variant_new_pool_string_array(&value, &array);
-
-			api->godot_dictionary_set(dict, &key, &value);
-			api->godot_string_destroy(&key_str);
-			api->godot_pool_string_array_destroy(&array);
-			api->godot_variant_destroy(&value);
-			api->godot_variant_destroy(&key);
-		}
-		struct psd_record * next_animation_record = psd_document_next_child(doc);
-		psd_record_free(animation_record);
-		animation_record = next_animation_record;
-	}
 	if (!success)
 		api->godot_dictionary_destroy(dict);
 	return success;
-
 }
 
 static GDCALLINGCONV godot_variant get_sprite_frame_names(godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args) {
@@ -269,7 +354,7 @@ static GDCALLINGCONV godot_variant get_sprite_frame_names(godot_object *p_instan
 
 
 
-const struct godot_psdimporter godot_psdimporter = {0x01,
+const struct godot_psdimporter godot_psdimporter = {0x02,
                                                       constructor, destructor,
                                                       file_load, file_close,
                                                       get_layer_count,

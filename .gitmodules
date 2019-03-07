@@ -2,6 +2,6 @@
 	path = godot_headers
 	url = https://github.com/GodotNativeTools/godot_headers
 	branch = 3.0
-[submodule "psdump"]
-	path = psdump
-	url = https://github.com/rodolforg/psdump.git
+[submodule "libpsd"]
+	path = libpsd
+	url = https://github.com/rodolforg/libpsd.git

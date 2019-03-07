@@ -89,7 +89,8 @@ func import(source_file, save_path, options, r_platform_variants, r_gen_files):
 		sprframes.set_animation_loop(anim, options.loop)
 		sprframes.set_animation_speed(anim, options.default_fps)
 		for frame in animations[anim]:
-			var filename = anim + '/' + frame + '.png'
+			var frame_name = frame['name']
+			var filename = anim + '/' + frame_name + '.png'
 			if dir.length() > 0:
 				filename = dir + '/' + filename
 			var texture = load(filename)
