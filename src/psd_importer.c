@@ -288,7 +288,18 @@ static int _fetch_animation_frame_names(const psd_layer_record * layer, void * c
 		int buffer_size = width * height * 4;
 		api->godot_pool_byte_array_new(&image_buffer);
 		for (int i = 0; i < buffer_size; i++)
-			api->godot_pool_byte_array_append(&image_buffer, image_data[i]);
+			switch (i%4) {
+				case 1:
+				case 3:
+					api->godot_pool_byte_array_append(&image_buffer, image_data[i]);
+					break;
+				case 2:
+					api->godot_pool_byte_array_append(&image_buffer, image_data[i-2]);
+					break;
+				case 0:
+					api->godot_pool_byte_array_append(&image_buffer, image_data[i+2]);
+					break;
+			}
 		api->godot_variant_new_pool_byte_array(&image_value, &image_buffer);
 		api->godot_pool_byte_array_destroy(&image_buffer);
 		
