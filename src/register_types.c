@@ -68,9 +68,8 @@ void GDN_EXPORT godot_nativescript_init(void *p_handle) {
 		{godot_psdimporter.file_load, "file_load"},
 		{godot_psdimporter.file_close, "file_close"},
 		{godot_psdimporter.get_layer_count, "get_layer_count"},
-		{godot_psdimporter.extract_psd, "extract_psd"},
+		{godot_psdimporter.get_layers, "get_layers"},
 		{godot_psdimporter.is_sprite_frames, "is_sprite_frames"},
-		{godot_psdimporter.get_sprite_frame_names, "get_sprite_frame_names"},
 	};
 
 	godot_instance_method method_struct = { NULL, NULL, NULL };

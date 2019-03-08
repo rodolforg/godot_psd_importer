@@ -36,10 +36,9 @@ struct godot_psdimporter {
 	GDCALLINGCONV godot_variant (*file_close) (godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args);
 
 	GDCALLINGCONV godot_variant (*get_layer_count) (godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args);
+	GDCALLINGCONV godot_variant (*get_layers) (godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args);
 
-	GDCALLINGCONV godot_variant (*extract_psd) (godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args);
 	GDCALLINGCONV godot_variant (*is_sprite_frames) (godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args);
-	GDCALLINGCONV godot_variant (*get_sprite_frame_names) (godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args);
 };
 
 extern const struct godot_psdimporter godot_psdimporter;

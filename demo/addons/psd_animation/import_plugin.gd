@@ -70,7 +70,8 @@ func import(source_file, save_path, options, r_platform_variants, r_gen_files):
 	if !success:
 		return false
 
-	success = PsdImporter.extract_psd(dir)
+	var layers = PsdImporter.get_layers()
+	success = _extract_psd(layers, dir)
 	if options.just_extract_layers:
 		return success
 
@@ -78,7 +79,7 @@ func import(source_file, save_path, options, r_platform_variants, r_gen_files):
 		return false
 	print('is sprite frames')
 
-	var animations = PsdImporter.get_sprite_frame_names()
+	var animations = layers
 
 	var sprframes = SpriteFrames.new()
 	if sprframes.has_animation('default'):
@@ -88,12 +89,40 @@ func import(source_file, save_path, options, r_platform_variants, r_gen_files):
 		sprframes.add_animation(anim)
 		sprframes.set_animation_loop(anim, options.loop)
 		sprframes.set_animation_speed(anim, options.default_fps)
+
 		for frame in animations[anim]:
 			var frame_name = frame['name']
+			var img = Image.new()
+			img.create_from_data(frame['width'], frame['height'], false, Image.FORMAT_RGBA8, frame['image_buffer'] )
 			var filename = anim + '/' + frame_name + '.png'
+			var dir_ = Directory.new()
+			if not dir_.dir_exists(dir+'/'+anim):
+				dir_.make_dir(dir+'/'+anim)
+			var basename = frame['name']+'.png'
+			if dir_.file_exists(basename):
+				dir_.remove(basename)
+			var errr = img.save_png(dir+'/'+filename)
+			if errr != OK:
+				printerr('Error saving ', dir, '/', filename, ' : ', errr)
 			if dir.length() > 0:
 				filename = dir + '/' + filename
 			var texture = load(filename)
 			sprframes.add_frame(anim, texture)
 #		print(ResourceSaver.get_recognized_extensions(sprframes))
 	return ResourceSaver.save("%s.%s" % [save_path, get_save_extension()], sprframes)
+
+func _extract_psd(layers, dir):
+	for layer_group_name in layers.keys():
+		for layer in layers[layer_group_name]:
+			var layer_name = layer['name']
+			var img = Image.new()
+			img.create_from_data(layer['width'], layer['height'], false, Image.FORMAT_RGBA8, layer['image_buffer'] )
+			var filename = layer_group_name + '/' + layer_name + '.png'
+			var dir_ = Directory.new()
+			if not dir_.dir_exists(dir+'/'+layer_group_name):
+				dir_.make_dir(dir+'/'+layer_group_name)
+			if dir_.file_exists(dir+'/'+filename):
+				dir_.remove(dir+'/'+filename)
+			var errr = img.save_png(dir+'/'+filename)
+			if errr != OK:
+				printerr('Error saving ', dir, '/', filename, ' : ', errr)

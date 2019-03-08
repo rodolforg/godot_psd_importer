@@ -110,32 +110,6 @@ static GDCALLINGCONV godot_variant get_layer_count(godot_object *p_instance, voi
 	return ret;
 }
 
-static GDCALLINGCONV godot_variant extract_psd(godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args) {
-	godot_variant ret;
-	data_struct * user_data = (data_struct *) p_user_data;
-
-	if (!user_data || !user_data->doc || p_num_args != 1) {
-		api->godot_variant_new_bool(&ret, false);
-		return ret;
-	}
-
-	bool success = false;
-
-	if (api->godot_variant_get_type(p_args[0]) == GODOT_VARIANT_TYPE_STRING) {
-		godot_string dir_str = api->godot_variant_as_string(p_args[0]);
-		godot_char_string cstr = api->godot_string_utf8(&dir_str);
-		const char * dir = api->godot_char_string_get_data(&cstr);
-
-		success = true;
-/*		psd_document_save_layers(user_data->doc, dir);*/
-
-		api->godot_char_string_destroy(&cstr);
-		api->godot_string_destroy(&dir_str);
-	}
-	api->godot_variant_new_bool(&ret, success);
-	return ret;
-}
-
 static int _check_sprite_levels(const psd_layer_record * layer, void * cb_data, int level) {
 	bool * ok = (bool*) cb_data;
 	if (level >= 2) {
@@ -175,16 +149,16 @@ static GDCALLINGCONV godot_variant is_sprite_frames(godot_object *p_instance, vo
 	return ret;
 }
 
-struct sprite_anim_names {
+struct layer_tree {
 	godot_dictionary * dict;
-	const char * current_animation_name;
+	const char * current_group_name;
 	godot_array frame_info_array;
 };
 
-static void _push_animation_names(struct sprite_anim_names * sprite_anim_names) {
+static void _push_animation_names(struct layer_tree * sprite_anim_names) {
 	godot_string key_str;
 	api->godot_string_new(&key_str);
-	api->godot_string_parse_utf8(&key_str, sprite_anim_names->current_animation_name);
+	api->godot_string_parse_utf8(&key_str, sprite_anim_names->current_group_name);
 
 	godot_variant key;
 	api->godot_variant_new_string(&key, &key_str);
@@ -199,19 +173,21 @@ static void _push_animation_names(struct sprite_anim_names * sprite_anim_names) 
 	api->godot_variant_destroy(&key);
 }
 
-static int _fetch_animation_frame_names(const psd_layer_record * layer, void * cb_data, int level) {
-	struct sprite_anim_names * sprite_anim_names = (struct sprite_anim_names*) cb_data;
+static int _fetch_layer_data(const psd_layer_record * layer, void * cb_data, int level) {
+	struct layer_tree * sprite_anim_names = (struct layer_tree*) cb_data;
 
 	if (level == 0) {
-		if (sprite_anim_names->current_animation_name != NULL) {
+		if (sprite_anim_names->current_group_name != NULL) {
 			_push_animation_names(sprite_anim_names);
-			sprite_anim_names->current_animation_name = NULL;
+			sprite_anim_names->current_group_name = NULL;
 		}
 		if (psd_layer_is_group(layer)) {
-			sprite_anim_names->current_animation_name = psd_layer_name(layer);
+			sprite_anim_names->current_group_name = psd_layer_name(layer);
 			api->godot_array_new(&sprite_anim_names->frame_info_array);
 		}
 	} else if (level == 1) {
+		if (psd_layer_is_group(layer))
+			return 1; // for now, only two-level layer trees
 		godot_string string;
 		api->godot_string_new(&string);
 		api->godot_string_parse_utf8(&string, psd_layer_name(layer));
@@ -277,7 +253,7 @@ static int _fetch_animation_frame_names(const psd_layer_record * layer, void * c
 		
 		godot_string image_key_str;
 		api->godot_string_new(&image_key_str);
-		api->godot_string_parse_utf8(&image_key_str, "image buffer");
+		api->godot_string_parse_utf8(&image_key_str, "image_buffer");
 		godot_variant image_key;
 		api->godot_variant_new_string(&image_key, &image_key_str);
 		api->godot_string_destroy(&image_key_str);
@@ -314,27 +290,22 @@ static int _fetch_animation_frame_names(const psd_layer_record * layer, void * c
 		api->godot_dictionary_destroy(&dict);
 		api->godot_variant_destroy(&dict_var);
 	} else
-		return 0;
+		return 1; // for now, only two-level layer trees
 	return 1;
 }
 
-static bool _get_sprite_frame_names(struct psd_document * doc, godot_dictionary * dict) {
+static bool _get_layers(struct psd_document * doc, godot_dictionary * dict) {
 	if (doc == NULL || dict == NULL)
-		return false;
-	
-	if (!_is_sprite_frames(doc))
 		return false;
 
 	bool success = true;
 	
-	api->godot_dictionary_new(dict);
-	
-	struct sprite_anim_names sprite_anim_names;
+	struct layer_tree sprite_anim_names;
 	sprite_anim_names.dict = dict;
-	sprite_anim_names.current_animation_name = NULL;
+	sprite_anim_names.current_group_name = NULL;
 	
-	psd_document_foreach_layer_level(doc, _fetch_animation_frame_names, &sprite_anim_names);
-	if (sprite_anim_names.current_animation_name != NULL)
+	psd_document_foreach_layer_level(doc, _fetch_layer_data, &sprite_anim_names);
+	if (sprite_anim_names.current_group_name != NULL)
 		_push_animation_names(&sprite_anim_names);
 
 	if (!success)
@@ -342,7 +313,7 @@ static bool _get_sprite_frame_names(struct psd_document * doc, godot_dictionary 
 	return success;
 }
 
-static GDCALLINGCONV godot_variant get_sprite_frame_names(godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args) {
+static GDCALLINGCONV godot_variant get_layers(godot_object *p_instance, void *p_method_data, void *p_user_data, int p_num_args, godot_variant **p_args) {
 	godot_variant ret;
 	data_struct * user_data = (data_struct *) p_user_data;
 	
@@ -352,14 +323,17 @@ static GDCALLINGCONV godot_variant get_sprite_frame_names(godot_object *p_instan
 	}
 
 	godot_dictionary dict;
-	bool success = _get_sprite_frame_names(user_data->doc, &dict);
+	api->godot_dictionary_new(dict);
+
+	bool success = _get_layers(user_data->doc, &dict);
 	
 	if (!success)
 		api->godot_variant_new_bool(&ret, false);
 	else {
 		api->godot_variant_new_dictionary(&ret, &dict);
-		api->godot_dictionary_destroy(&dict);
 	}
+
+	api->godot_dictionary_destroy(&dict);
 	return ret;
 }
 
@@ -369,6 +343,6 @@ const struct godot_psdimporter godot_psdimporter = {0x02,
                                                       constructor, destructor,
                                                       file_load, file_close,
                                                       get_layer_count,
-                                                      extract_psd,
-                                                      is_sprite_frames, get_sprite_frame_names,
+                                                      get_layers,
+                                                      is_sprite_frames,
                                                       };
